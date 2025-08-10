@@ -19,9 +19,84 @@
       },
       {
         "command": "deps-harmony.scanProject",
-        "title": "Scan Project Dependencies"
+        "title": "Scan Project Dependencies",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "deps-harmony.viewProblem",
+        "title": "View Problem Details"
+      },
+      {
+        "command": "deps-harmony.viewSolution",
+        "title": "View Solutions"
+      },
+      {
+        "command": "deps-harmony.refreshTree",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "deps-harmony.executeSolution",
+        "title": "Execute Solution"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "deps-harmony-explorer",
+          "title": "Deps Harmony",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "deps-harmony-explorer": [
+        {
+          "icon": "media/icon.svg",
+          "id": "depsHarmony.dependencyTree",
+          "name": "Dependencies",
+          "type": "tree"
+        },
+        {
+          "icon": "$(warning)",
+          "id": "depsHarmony.conflictsList",
+          "name": "Conflicts",
+          "type": "tree"
+        },
+        {
+          "icon": "$(lightbulb)",
+          "id": "depsHarmony.solutionsList",
+          "name": "Solutions",
+          "type": "tree"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "deps-harmony.scanProject",
+          "when": "view == depsHarmony.dependencyTree",
+          "group": "navigation"
+        },
+        {
+          "command": "deps-harmony.refreshTree",
+          "when": "view == depsHarmony.conflictsList || view == depsHarmony.solutionsList",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "deps-harmony.viewProblem",
+          "when": "view == depsHarmony.dependencyTree && viewItem == dependency-conflict",
+          "group": "inline"
+        },
+        {
+          "command": "deps-harmony.viewSolution",
+          "when": "view == depsHarmony.dependencyTree && viewItem == dependency-conflict",
+          "group": "inline"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

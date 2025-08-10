@@ -4,6 +4,11 @@ import * as vscode from "vscode";
 import { ParserService } from "./services/parser.service";
 import { GraphService } from "./services/graph.service";
 import { AnalyzerService } from "./services/analyzer.service";
+import { DependencyTreeDataProvider } from "./providers/dependencyTree.provider";
+import { ConflictsListDataProvider } from "./providers/conflictsList.provider";
+import { SolutionsListDataProvider } from "./providers/solutionsList.provider";
+import { DependencyTreeItem } from "./models/dependencyTreeItem";
+import { SolutionTreeItem } from "./models/solutionTreeItem";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -11,6 +16,32 @@ export function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
   // This line of code will only be executed once when your extension is activated
   console.log('Congratulations, your extension "deps-harmony" is now active!');
+
+  // Create and register all tree data providers
+  const treeDataProvider = new DependencyTreeDataProvider();
+  const conflictsListProvider = new ConflictsListDataProvider();
+  const solutionsListProvider = new SolutionsListDataProvider();
+
+  const treeView = vscode.window.createTreeView("depsHarmony.dependencyTree", {
+    treeDataProvider,
+    showCollapseAll: true,
+  });
+
+  const conflictsView = vscode.window.createTreeView(
+    "depsHarmony.conflictsList",
+    {
+      treeDataProvider: conflictsListProvider,
+      showCollapseAll: true,
+    }
+  );
+
+  const solutionsView = vscode.window.createTreeView(
+    "depsHarmony.solutionsList",
+    {
+      treeDataProvider: solutionsListProvider,
+      showCollapseAll: true,
+    }
+  );
 
   // The command has been defined in the package.json file
   // Now provide the implementation of the command with registerCommand
@@ -110,6 +141,11 @@ export function activate(context: vscode.ExtensionContext) {
             }
             console.log("=== End Analysis ===");
 
+            // Update all tree views with the dependency graph and conflicts
+            treeDataProvider.updateTree(graph, conflicts);
+            conflictsListProvider.updateConflicts(conflicts);
+            solutionsListProvider.updateSolutions(conflicts);
+
             // Show success message to user with conflict info
             const conflictSummary =
               conflicts.length > 0
@@ -117,7 +153,7 @@ export function activate(context: vscode.ExtensionContext) {
                 : " No conflicts detected.";
 
             vscode.window.showInformationMessage(
-              `Dependency scan complete! Found ${stats.totalNodes} total packages (${stats.directDependencies} direct, ${stats.devDependencies} dev).${conflictSummary} Check console for details.`
+              `Dependency scan complete! Found ${stats.totalNodes} total packages (${stats.directDependencies} direct, ${stats.devDependencies} dev).${conflictSummary} Check console and tree views for details.`
             );
           }
         );
@@ -132,7 +168,88 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(helloWorldDisposable, scanProjectDisposable);
+  // Register additional commands
+  const viewProblemDisposable = vscode.commands.registerCommand(
+    "deps-harmony.viewProblem",
+    (item: DependencyTreeItem) => {
+      if (item.conflicts.length > 0) {
+        const conflict = item.conflicts[0]; // Show first conflict
+        vscode.window.showInformationMessage(`Problem: ${conflict.message}`, {
+          modal: true,
+        });
+      }
+    }
+  );
+
+  const viewSolutionDisposable = vscode.commands.registerCommand(
+    "deps-harmony.viewSolution",
+    (item: DependencyTreeItem) => {
+      if (item.conflicts.length > 0 && item.conflicts[0].solutions.length > 0) {
+        const solutions = item.conflicts[0].solutions;
+        const solutionText = solutions
+          .map((sol, index) => `${index + 1}. ${sol.description}`)
+          .join("\n");
+
+        vscode.window.showInformationMessage(
+          `Available Solutions:\n${solutionText}`,
+          { modal: true }
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          "No solutions available for this conflict."
+        );
+      }
+    }
+  );
+
+  const executeSolutionDisposable = vscode.commands.registerCommand(
+    "deps-harmony.executeSolution",
+    async (item: SolutionTreeItem) => {
+      try {
+        const result = await vscode.window.showWarningMessage(
+          `Execute solution: ${item.solution.description}?`,
+          { modal: true },
+          "Execute",
+          "Cancel"
+        );
+
+        if (result === "Execute") {
+          await item.execute();
+          vscode.window.showInformationMessage(
+            `Solution executed successfully: ${item.solution.description}`
+          );
+        }
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Failed to execute solution: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+  );
+
+  const refreshTreeDisposable = vscode.commands.registerCommand(
+    "deps-harmony.refreshTree",
+    () => {
+      treeDataProvider.refresh();
+      conflictsListProvider.refresh();
+      solutionsListProvider.refresh();
+      vscode.window.showInformationMessage("Tree views refreshed!");
+    }
+  );
+
+  context.subscriptions.push(
+    helloWorldDisposable,
+    scanProjectDisposable,
+    viewProblemDisposable,
+    viewSolutionDisposable,
+    executeSolutionDisposable,
+    refreshTreeDisposable,
+    treeView,
+    conflictsView,
+    solutionsView
+  );
 }
 
 // This method is called when your extension is deactivated
