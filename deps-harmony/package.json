@@ -38,6 +38,11 @@
       {
         "command": "deps-harmony.executeSolution",
         "title": "Execute Solution"
+      },
+      {
+        "command": "deps-harmony.applySolution",
+        "title": "Apply Solution",
+        "icon": "$(check)"
       }
     ],
     "viewsContainers": {
@@ -93,6 +98,11 @@
         {
           "command": "deps-harmony.viewSolution",
           "when": "view == depsHarmony.dependencyTree && viewItem == dependency-conflict",
+          "group": "inline"
+        },
+        {
+          "command": "deps-harmony.applySolution",
+          "when": "viewItem == solution-item",
           "group": "inline"
         }
       ]

@@ -36,8 +36,8 @@ export class SolutionTreeItem extends vscode.TreeItem {
 
     // Make it a command that can be clicked to execute
     this.command = {
-      command: "deps-harmony.executeSolution",
-      title: "Execute Solution",
+      command: "deps-harmony.applySolution",
+      title: "Apply Solution",
       arguments: [this],
     };
   }

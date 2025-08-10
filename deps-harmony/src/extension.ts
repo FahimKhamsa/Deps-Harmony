@@ -9,6 +9,7 @@ import { ConflictsListDataProvider } from "./providers/conflictsList.provider";
 import { SolutionsListDataProvider } from "./providers/solutionsList.provider";
 import { DependencyTreeItem } from "./models/dependencyTreeItem";
 import { SolutionTreeItem } from "./models/solutionTreeItem";
+import { FixService } from "./services/fix.service";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -229,6 +230,108 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  const applySolutionDisposable = vscode.commands.registerCommand(
+    "deps-harmony.applySolution",
+    async (item: SolutionTreeItem) => {
+      try {
+        // Parse the solution description to extract package details
+        const solutionDetails = FixService.parseSolutionDescription(
+          item.solution.description
+        );
+
+        if (!solutionDetails) {
+          vscode.window.showErrorMessage(
+            "Unable to parse solution details. Please try manual installation."
+          );
+          return;
+        }
+
+        // Show detailed confirmation dialog
+        const confirmationMessage = [
+          `Apply Solution: ${item.solution.description}`,
+          "",
+          `This will:`,
+          `• Create a backup of package.json`,
+          `• Update ${solutionDetails.packageName} to version ${solutionDetails.newVersion}`,
+          `• Run npm install to update dependencies`,
+          "",
+          `Do you want to proceed?`,
+        ].join("\n");
+
+        const result = await vscode.window.showWarningMessage(
+          confirmationMessage,
+          { modal: true },
+          "Apply Fix",
+          "Cancel"
+        );
+
+        if (result !== "Apply Fix") {
+          return;
+        }
+
+        // Show progress while applying the fix
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Applying dependency fix...",
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({ increment: 0, message: "Creating backup..." });
+
+            // Apply the fix
+            const fixResult = await FixService.applyDependencyFix(
+              solutionDetails.packageName,
+              solutionDetails.newVersion,
+              solutionDetails.isDev
+            );
+
+            progress.report({
+              increment: 50,
+              message: "Updating package.json...",
+            });
+
+            if (fixResult.success) {
+              progress.report({
+                increment: 80,
+                message: "Running npm install...",
+              });
+
+              // Wait a bit for npm install to start
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+
+              progress.report({
+                increment: 100,
+                message: "Fix applied successfully!",
+              });
+
+              // Show success message
+              vscode.window
+                .showInformationMessage(
+                  `✅ ${fixResult.message}\n\nBackup created at: ${fixResult.backupPath}\n\nPlease check the terminal for npm install results.`,
+                  "Re-scan Project"
+                )
+                .then((selection) => {
+                  if (selection === "Re-scan Project") {
+                    // Trigger a re-scan after the fix
+                    vscode.commands.executeCommand("deps-harmony.scanProject");
+                  }
+                });
+            } else {
+              throw new Error(fixResult.error || fixResult.message);
+            }
+          }
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Failed to apply solution: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+  );
+
   const refreshTreeDisposable = vscode.commands.registerCommand(
     "deps-harmony.refreshTree",
     () => {
@@ -245,6 +348,7 @@ export function activate(context: vscode.ExtensionContext) {
     viewProblemDisposable,
     viewSolutionDisposable,
     executeSolutionDisposable,
+    applySolutionDisposable,
     refreshTreeDisposable,
     treeView,
     conflictsView,
