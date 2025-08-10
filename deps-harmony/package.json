@@ -43,6 +43,14 @@
         "command": "deps-harmony.applySolution",
         "title": "Apply Solution",
         "icon": "$(check)"
+      },
+      {
+        "command": "deps-harmony.suggestPackages",
+        "title": "Suggest Compatible Packages"
+      },
+      {
+        "command": "deps-harmony.openSidebar",
+        "title": "Open Deps Harmony Sidebar"
       }
     ],
     "viewsContainers": {
@@ -106,6 +114,31 @@
           "group": "inline"
         }
       ]
+    },
+    "configuration": {
+      "title": "Deps Harmony",
+      "properties": {
+        "deps-harmony.scanOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically scan dependencies when package.json is saved"
+        },
+        "deps-harmony.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show dependency status in the status bar"
+        },
+        "deps-harmony.highlightConflicts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight conflicting dependencies in package.json editor"
+        },
+        "deps-harmony.autoCleanupBackups": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically cleanup old backup files after 7 days"
+        }
+      }
     }
   },
   "scripts": {

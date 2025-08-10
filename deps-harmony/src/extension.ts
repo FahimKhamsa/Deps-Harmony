@@ -10,6 +10,12 @@ import { SolutionsListDataProvider } from "./providers/solutionsList.provider";
 import { DependencyTreeItem } from "./models/dependencyTreeItem";
 import { SolutionTreeItem } from "./models/solutionTreeItem";
 import { FixService } from "./services/fix.service";
+import { SuggestionService } from "./services/suggestion.service";
+import { DecorationService } from "./services/decoration.service";
+
+// Global state for Phase 5 features
+let currentConflicts: any[] = [];
+let statusBarItem: vscode.StatusBarItem;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -17,6 +23,22 @@ export function activate(context: vscode.ExtensionContext) {
   // Use the console to output diagnostic information (console.log) and errors (console.error)
   // This line of code will only be executed once when your extension is activated
   console.log('Congratulations, your extension "deps-harmony" is now active!');
+
+  // Initialize Phase 5 services
+  DecorationService.initialize();
+
+  // Create status bar item
+  const config = vscode.workspace.getConfiguration("deps-harmony");
+  if (config.get("showStatusBar", true)) {
+    statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      100
+    );
+    statusBarItem.command = "deps-harmony.openSidebar";
+    statusBarItem.text = "$(package) Deps Harmony";
+    statusBarItem.tooltip = "Click to open Deps Harmony sidebar";
+    statusBarItem.show();
+  }
 
   // Create and register all tree data providers
   const treeDataProvider = new DependencyTreeDataProvider();
@@ -146,6 +168,15 @@ export function activate(context: vscode.ExtensionContext) {
             treeDataProvider.updateTree(graph, conflicts);
             conflictsListProvider.updateConflicts(conflicts);
             solutionsListProvider.updateSolutions(conflicts);
+
+            // Update global state for Phase 5 features
+            currentConflicts = conflicts;
+
+            // Update status bar
+            updateStatusBar(conflicts);
+
+            // Apply decorations to package.json files
+            DecorationService.applyDecorations(conflicts);
 
             // Show success message to user with conflict info
             const conflictSummary =
@@ -342,6 +373,142 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
+  // Phase 5: Suggest Compatible Packages Command
+  const suggestPackagesDisposable = vscode.commands.registerCommand(
+    "deps-harmony.suggestPackages",
+    async () => {
+      try {
+        const input = await vscode.window.showInputBox({
+          prompt: "Enter package names (comma-separated)",
+          placeHolder: "e.g., react, typescript, express",
+          validateInput: (value) => {
+            if (!value || value.trim().length === 0) {
+              return "Please enter at least one package name";
+            }
+            return null;
+          },
+        });
+
+        if (!input) {
+          return; // User cancelled
+        }
+
+        const packageNames = SuggestionService.parsePackageList(input);
+        if (packageNames.length === 0) {
+          vscode.window.showErrorMessage("No valid package names provided");
+          return;
+        }
+
+        // Show progress while analyzing packages
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Analyzing package compatibility...",
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({
+              increment: 0,
+              message: "Fetching package info...",
+            });
+
+            const result = await SuggestionService.suggestCompatiblePackages(
+              packageNames
+            );
+
+            progress.report({ increment: 100, message: "Analysis complete!" });
+
+            // Show results
+            if (result.compatible) {
+              const message = [
+                `✅ Compatible package set found!`,
+                "",
+                `Suggested packages:`,
+                ...result.suggestions.map(
+                  (s) =>
+                    `• ${s.packageName}@${s.suggestedVersion} (${s.reason})`
+                ),
+                "",
+                `Install command:`,
+                `${result.installCommand}`,
+              ].join("\n");
+
+              const action = await vscode.window.showInformationMessage(
+                message,
+                { modal: true },
+                "Copy Command",
+                "Close"
+              );
+
+              if (action === "Copy Command") {
+                await vscode.env.clipboard.writeText(result.installCommand);
+                vscode.window.showInformationMessage(
+                  "Install command copied to clipboard!"
+                );
+              }
+            } else {
+              const message = [
+                `⚠️ Compatibility issues found:`,
+                "",
+                ...result.conflicts,
+                "",
+                result.suggestions.length > 0 ? `Partial suggestions:` : "",
+                ...result.suggestions.map(
+                  (s) =>
+                    `• ${s.packageName}@${s.suggestedVersion} (${s.reason})`
+                ),
+              ].join("\n");
+
+              vscode.window.showWarningMessage(message, { modal: true });
+            }
+          }
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Failed to analyze packages: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+  );
+
+  // Phase 5: Open Sidebar Command
+  const openSidebarDisposable = vscode.commands.registerCommand(
+    "deps-harmony.openSidebar",
+    () => {
+      vscode.commands.executeCommand(
+        "workbench.view.extension.deps-harmony-explorer"
+      );
+    }
+  );
+
+  // Phase 5: File watchers and event listeners
+  const packageJsonWatcher =
+    vscode.workspace.createFileSystemWatcher("**/package.json");
+
+  packageJsonWatcher.onDidChange(async (uri) => {
+    const config = vscode.workspace.getConfiguration("deps-harmony");
+    if (config.get("scanOnSave", false)) {
+      // Auto-scan when package.json changes
+      vscode.commands.executeCommand("deps-harmony.scanProject");
+    }
+  });
+
+  // Editor change listeners for decorations
+  const activeEditorChangeDisposable =
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        DecorationService.onActiveEditorChanged(editor, currentConflicts);
+      }
+    });
+
+  const documentChangeDisposable = vscode.workspace.onDidChangeTextDocument(
+    (event) => {
+      DecorationService.onDocumentChanged(event.document, currentConflicts);
+    }
+  );
+
   context.subscriptions.push(
     helloWorldDisposable,
     scanProjectDisposable,
@@ -350,11 +517,53 @@ export function activate(context: vscode.ExtensionContext) {
     executeSolutionDisposable,
     applySolutionDisposable,
     refreshTreeDisposable,
+    suggestPackagesDisposable,
+    openSidebarDisposable,
+    packageJsonWatcher,
+    activeEditorChangeDisposable,
+    documentChangeDisposable,
     treeView,
     conflictsView,
     solutionsView
   );
+
+  // Add status bar to subscriptions if it exists
+  if (statusBarItem) {
+    context.subscriptions.push(statusBarItem);
+  }
+}
+
+// Helper function to update status bar
+function updateStatusBar(conflicts: any[]): void {
+  if (!statusBarItem) {
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration("deps-harmony");
+  if (!config.get("showStatusBar", true)) {
+    statusBarItem.hide();
+    return;
+  }
+
+  if (conflicts.length === 0) {
+    statusBarItem.text = "$(check) Deps Harmony";
+    statusBarItem.tooltip = "No dependency conflicts detected";
+    statusBarItem.backgroundColor = undefined;
+  } else {
+    statusBarItem.text = `$(warning) Deps Harmony (${conflicts.length})`;
+    statusBarItem.tooltip = `${conflicts.length} dependency conflict(s) detected. Click to view details.`;
+    statusBarItem.backgroundColor = new vscode.ThemeColor(
+      "statusBarItem.warningBackground"
+    );
+  }
+
+  statusBarItem.show();
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+  DecorationService.dispose();
+  if (statusBarItem) {
+    statusBarItem.dispose();
+  }
+}
